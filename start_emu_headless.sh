@@ -12,38 +12,39 @@ function launch_emulator () {
   adb devices | grep emulator | cut -f1 | while read line; do adb -s "$line" emu kill; done
   if [ "$OSTYPE" == "macOS" ];
   then
-  emulator -avd "${emulator_name}" -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim &
+    echo "Running: emulator -avd ${emulator_name} -wipe-data -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 2048 -cache-size 1000 -partition-size 1024 &"
+    emulator -avd "${emulator_name}" -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 4096 -cache-size 1000 -partition-size 1024 &
   elif [ "$OSTYPE" == "Linux" ]
   then
-  nohup emulator -avd "${emulator_name}" -verbose -no-boot-anim -no-window -gpu off -no-accel -no-snapshot-load &
+    echo "Running: nohup emulator -avd ${emulator_name} -wipe-data -verbose -no-boot-anim -no-window -gpu off -no-accel -no-snapshot-load -memory 2048 -cache-size 1000 -partition-size 1024 &"
+    nohup emulator -avd "${emulator_name}" -verbose -no-boot-anim -no-window -gpu off -no-accel -no-snapshot-load -memory 4096 -cache-size 1000 -partition-size 1024 &
   elif [ "$OSTYPE" == "linux-gnu" ]
   then
-  nohup emulator -avd "${emulator_name}" -verbose -no-boot-anim -no-window -gpu off -no-snapshot-load &
+    echo "Running: nohup emulator -avd ${emulator_name} -wipe-data -verbose -no-boot-anim -no-window -gpu off -no-snapshot-load -memory 2048 -cache-size 1000 -partition-size 1024 &"
+    nohup emulator -avd "${emulator_name}" -verbose -no-boot-anim -no-window -gpu off -no-snapshot-load -memory 4096 -cache-size 1000 -partition-size 1024 &
   fi
 };
 
 function check_emulator_status () {
-
-printf "${G}==> ${BL}Checking device booting up status 🧐.. ${G}<==${NC}""\n"
-while [[ "$(adb shell getprop sys.boot_completed 2>&1)" != 1 ]];
+  printf "${G}==> ${BL}Checking device booting up status 🧐.. ${G}<==${NC}""\n"
+  while [[ "$(adb shell getprop sys.boot_completed 2>&1)" != 1 ]];
   do
-  sleep 2
-  if [ "$(adb shell getprop sys.boot_completed 2>&1)" == 1 ];
-  then
-     printf "${G}☞ ${BL}Device is fully booted and running!! 😀 : '$(adb shell getprop sys.boot_completed 2>&1)' ${G}☜${NC}""\n"
-     adb devices -l
-     adb shell input keyevent 82
-     break
-  else
-     if [ "$(adb shell getprop sys.boot_completed 2>&1)" == "" ];
-     then
-     printf "${G}==> ${YE}Device is partially Booted! 😕 ${G}<==${NC}""\n"
-     else
-     printf  "${G}==> ${RED}$(adb shell getprop sys.boot_completed 2>&1) 😱 ${G}<==${NC}""\n"
-     fi
-  fi
-done
-
+    sleep 5
+    if [ "$(adb shell getprop sys.boot_completed 2>&1)" == 1 ];
+    then
+       printf "${G}☞ ${BL}Device is fully booted and running!! 😀 : '$(adb shell getprop sys.boot_completed 2>&1)' ${G}☜${NC}""\n"
+       adb devices -l
+       adb shell input keyevent 82
+       break
+    else
+       if [ "$(adb shell getprop sys.boot_completed 2>&1)" == "" ];
+       then
+       printf "${G}==> ${YE}Device is partially Booted! 😕 ${G}<==${NC}""\n"
+       else
+       printf  "${G}==> ${RED}$(adb shell getprop sys.boot_completed 2>&1) 😱 ${G}<==${NC}""\n"
+       fi
+    fi
+  done
 };
 
 function disable_animation() {
@@ -56,6 +57,54 @@ function hidden_policy() {
   adb shell "settings put global hidden_api_policy_pre_p_apps 1;settings put global hidden_api_policy_p_apps 1;settings put global hidden_api_policy 1"
 };
 
+function check_emulator_focus() {
+  echo "Android is booting..."
+  EMU_BOOTED=0
+  n=0
+  first_launcher=1
+  echo 1 > /tmp/failed
+  while [[ $EMU_BOOTED = 0 ]];do
+     echo "Test for current focus"
+
+     CURRENT_FOCUS=$(adb shell dumpsys window 2>/dev/null | grep -i mCurrentFocus)
+     echo "Current focus: ${CURRENT_FOCUS}"
+     case "${CURRENT_FOCUS}" in
+
+     *"Launcher"*)
+       if [[ "${first_launcher}" == 1 ]]; then
+         echo "Launcher seems to be ready, wait 5 sec for another popup..."
+         sleep 5
+         first_launcher=0
+       else
+         echo "Launcher is ready, Android boot completed"
+         EMU_BOOTED=1
+         rm /tmp/failed
+       fi
+     ;;
+
+      *)
+        adb shell input keyevent KEYCODE_ENTER
+        adb shell input keyevent KEYCODE_DPAD_DOWN
+        adb shell input keyevent KEYCODE_ENTER
+        first_launcher=1
+        n=$((n + 1))
+        echo "Waiting for 5 sec for Android emulator to boot (${n})..."
+        sleep 5
+      ;;
+
+     esac
+  done
+  echo "Android Emulator started."
+};
+
+function access_emulator_with_adb() {
+  if test -s /tmp/failed; then
+    echo "Skip"
+  else
+    "adb" shell ls || true
+  fi
+};
+
 launch_emulator
 sleep 4
 check_emulator_status
@@ -63,4 +112,8 @@ sleep 1
 disable_animation
 sleep 1
 hidden_policy
+sleep 1
+check_emulator_focus
+sleep 1
+access_emulator_with_adb
 sleep 1
